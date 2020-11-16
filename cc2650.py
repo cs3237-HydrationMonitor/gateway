@@ -15,11 +15,15 @@ import time
 import json
 import requests
 import pickle
-
+import os
+import sys
 from bleak import BleakClient
 
 global accelDataPoints_10
 global gyroDataPoints_10
+global awsUri
+global sensorMac
+global expectedOutput
 
 
 class Service:
@@ -112,7 +116,7 @@ class AccelerometerSensorMovementSensorMPU9250(MovementSensorMPU9250SubService):
         
         if len(accelDataPoints_10) < 10:
             accelDataPoints_10.append(tuple([ v*self.scale for v in rawVals ]))
-        # print("[MovementSensor] Accelerometer:", tuple([ v*self.scale for v in rawVals ]))
+        print("[MovementSensor] Accelerometer:", tuple([ v*self.scale for v in rawVals ]))
 
 
 class GyroscopeSensorMovementSensorMPU9250(MovementSensorMPU9250SubService):
@@ -131,7 +135,7 @@ class GyroscopeSensorMovementSensorMPU9250(MovementSensorMPU9250SubService):
             while(len(accelDataPoints_10) < 10):
                 time.sleep(1.0)
             postToAws()
-        # print("[MovementSensor] Gyroscope:", tuple([ v*self.scale for v in rawVals ]))
+        print("[MovementSensor] Gyroscope:", tuple([ v*self.scale for v in rawVals ]))
 
 def postToAws():
     
@@ -139,27 +143,37 @@ def postToAws():
 
     global gyroDataPoints_10
     global accelDataPoints_10
+    global awsUri
+    global expectedOutput
 
     data = {
         "Gyro": gyroDataPoints_10,
         "Accel": accelDataPoints_10,
-        "Result": 1
+        "Result": expectedOutput
     }
 
-    uri = 'http://ec2-35-164-33-157.us-west-2.compute.amazonaws.com:3237'
+    uri = awsUri
     header = {'Content-type': 'application/json'}
     requests.post(uri+'/put', headers=header, data=pickle.dumps(data))
     # requests.post(uri+'/get')
     
+    print("Post to AWS Complete\n")
+
     gyroDataPoints_10.clear()
     accelDataPoints_10.clear()
 
-    # print("Post to AWS Complete\n")
+    
+    
 
 async def run(address):
     async with BleakClient(address) as client:
+        global awsUri
+        global expectedOutput
+        
         x = await client.is_connected()
         print("Connected: {0}".format(x))
+        print("Sending to: " + awsUri)
+        print("Data Output: " + expectedOutput)
 
         # led_and_buzzer = LEDAndBuzzer()
 
@@ -208,17 +222,26 @@ if __name__ == "__main__":
     To find the address, once your sensor tag is blinking the green led after pressing the button, run the discover.py
     file which was provided as an example from bleak to identify the sensor tag device
     """
-    import os
+    
+    if len(sys.argv) != 4:
+        print("Syntax: python " + sys.argv[0] + " <SensorMacAddress> <AWS Uri>:3237 <Positive-Recording: 1 / Negative-Recording :0>")
 
     global accelDataPoints_10
     global gyroDataPoints_10
+    global awsUri
+    global sensorMac
+    global expectedOutput
+
+    sensorMac = sys.argv[1]
+    awsUri = sys.argv[2]
+    expectedOutput = sys.argv[3]
     
     accelDataPoints_10 = []
     gyroDataPoints_10 = []
 
     os.environ["PYTHONASYNCIODEBUG"] = str(1)
     address = (
-        "F0:F8:F2:86:BB:85"
+        sensorMac
         if platform.system() != "Darwin"
         else "6FFBA6AE-0802-4D92-B1CD-041BE4B4FEB9"
     )
